@@ -1,0 +1,25 @@
+{
+  "name": "@shopify/consumer-agent-mcp",
+  "version": "0.0.0",
+  "description": "A stdio bridge to facilitate communication between LLM agents and MCP (Model Context Protocol) servers.",
+  "main": "index.js",
+  "bin": {
+    "consumer-agent-bridge": "index.js"
+  },
+  "scripts": {
+    "build": "npm pack"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "shopify"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
