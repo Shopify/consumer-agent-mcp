@@ -2,8 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
-const { log } = require('console');
+const https = require('https');
 
 const DEFAULT_LOG_DIR = path.join(process.env.HOME || process.env.USERPROFILE, 'bridge_logs');
 const LOG_FILE = path.join(DEFAULT_LOG_DIR, 'bridge.log');
@@ -31,7 +30,7 @@ if (!process.env.MCP_SERVER) {
 
 logMessage("Bridge started");
 
-process.stdin.on('data', async (data) => {
+process.stdin.on('data', (data) => {
   logMessage("Received data from stdin");
   const line = data.toString().trim();
   logMessage(`Input JSON: ${line}`);
@@ -60,21 +59,43 @@ process.stdin.on('data', async (data) => {
     headers['Authorization'] = `Basic ${basicAuth}`;
   }
 
-  const config = {
-    method: 'post',
-    url: process.env.MCP_SERVER,
+  const url = new URL(process.env.MCP_SERVER);
+
+  const options = {
+    hostname: url.hostname,
+    port: url.port || 443,
+    path: url.pathname,
+    method: 'POST',
     headers,
-    data: line,
   };
 
-  try {
-    const response = await axios(config);
-    const jsonResponse = JSON.stringify(response.data)
-    logMessage(`Response JSON: ${jsonResponse}`);
-    console.log(jsonResponse);
-  } catch (error) {
+  const req = https.request(options, (res) => {
+    let responseData = '';
+
+    res.on('data', (chunk) => {
+      responseData += chunk;
+    });
+
+    res.on('end', () => {
+      try {
+        const jsonResponse = JSON.stringify(JSON.parse(responseData));
+        logMessage(`Response JSON: ${jsonResponse}`);
+        console.log(jsonResponse);
+      } catch (e) {
+        logMessage("Invalid JSON response from server");
+        console.log(JSON.stringify({ error: "Invalid JSON response from server" }));
+      }
+    });
+  });
+
+  req.on('error', (error) => {
     logMessage("curl failed");
-  }
+    logMessage(error.message);
+    console.log(JSON.stringify({ error: "Request failed" }));
+  });
+
+  req.write(line);
+  req.end();
 });
 
 process.stdin.on('end', () => {
