@@ -19,7 +19,8 @@ try {
 
 function logMessage(message) {
   if (fs.existsSync(LOG_FILE)) {
-    fs.appendFileSync(LOG_FILE, `${message}\n`);
+    const serverPrefix = process.env.MCP_SERVER ? `[${process.env.MCP_SERVER}] ` : '';
+    fs.appendFileSync(LOG_FILE, `${serverPrefix}${message}\n`);
   }
 }
 
