@@ -158,6 +158,42 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
     headers,
   };
 
+  options.timeout = process.env.REQUEST_TIMEOUT ? parseInt(process.env.REQUEST_TIMEOUT, 10) : 30000;
+
+  const handleRequestError = (error, requestId = null) => {
+    logMessage(`Request failed for RPC ID ${rpcId}`, requestId);
+    logMessage(error.message, requestId);
+    logRpcError("Request failed", -32603, error.message, rpcId);
+  };
+
+  const handleResponse = (responseData, requestId) => {
+    if (!responseData.trim()) {
+      logMessage(`Received empty response for RPC ID ${rpcId}`, requestId);
+      if (rpcId !== undefined && rpcId !== null) {
+        logRpcError("Empty response from server", -32603, "Server returned empty content", rpcId, requestId);
+      }
+      return;
+    }
+
+    try {
+      const jsonResponse = JSON.parse(responseData);
+
+      if (rpcId === undefined || rpcId === null) {
+        logMessage(`Processed notification request successfully (no response needed)`, requestId);
+        return;
+      }
+
+      logMessage(`Response for RPC ID ${rpcId}: ${JSON.stringify(jsonResponse)}`, requestId);
+      console.log(JSON.stringify(jsonResponse));
+    } catch (e) {
+      if (rpcId !== undefined && rpcId !== null) {
+        logRpcError("Invalid JSON response from server", -32603, responseData, rpcId, requestId);
+      } else {
+        logMessage(`Error processing notification response: ${e.message}`, requestId);
+      }
+    }
+  };
+
   const req = https.request(options, (res) => {
     let responseData = '';
     const requestId = res.headers['x-request-id'];
@@ -167,38 +203,17 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
     });
 
     res.on('end', () => {
-      try {
-        if (!responseData.trim()) {
-          logMessage(`Received empty response for RPC ID ${rpcId}`, requestId);
-          if (rpcId !== undefined && rpcId !== null) {
-            logRpcError("Empty response from server", -32603, "Server returned empty content", rpcId, requestId);
-          }
-          return;
-        }
-
-        const jsonResponse = JSON.parse(responseData);
-
-        if (rpcId === undefined || rpcId === null) {
-          logMessage(`Processed notification request successfully (no response needed)`, requestId);
-          return;
-        }
-
-        logMessage(`Response for RPC ID ${rpcId}: ${JSON.stringify(jsonResponse)}`, requestId);
-        console.log(JSON.stringify(jsonResponse));
-      } catch (e) {
-        if (rpcId !== undefined && rpcId !== null) {
-          logRpcError("Invalid JSON response from server", -32603, responseData, rpcId, requestId);
-        } else {
-          logMessage(`Error processing notification response: ${e.message}`, requestId);
-        }
-      }
+      handleResponse(responseData, requestId);
     });
   });
 
   req.on('error', (error) => {
-    logMessage(`Request failed for RPC ID ${rpcId}`, null);
-    logMessage(error.message, null);
-    logRpcError("Request failed", -32603, error.message, rpcId);
+    handleRequestError(error);
+  });
+
+  req.on('timeout', () => {
+    req.destroy();
+    handleRequestError(new Error(`Request timed out after ${options.timeout}ms`));
   });
 
   req.write(jsonStr);
