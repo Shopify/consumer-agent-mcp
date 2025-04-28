@@ -17,16 +17,17 @@ try {
   console.error(`Warning: Cannot write to ${LOG_FILE}. Check permissions or file system.`);
 }
 
-function logMessage(message) {
+function logMessage(message, requestId = null) {
   if (fs.existsSync(LOG_FILE)) {
+    const timestamp = new Date().toISOString();
     const serverPrefix = process.env.MCP_SERVER ? `[${process.env.MCP_SERVER}] ` : '';
-    fs.appendFileSync(LOG_FILE, `${serverPrefix}${message}\n\n`, 'utf8');
+    const requestIdPrefix = requestId ? `[RequestID: ${requestId}] ` : '';
+    fs.appendFileSync(LOG_FILE, `${timestamp} ${serverPrefix}${requestIdPrefix}${message}\n\n`, 'utf8');
   }
 }
 
-function logRpcError(message, code = -32603, data = undefined, id = null) {
-  logMessage(`Error: ${message}`);
-
+function logRpcError(message, code = -32603, data = undefined, id = null, requestId = null) {
+  logMessage(`Error: ${message}, Data: ${data}, Code: ${code}, ID: ${id}`, requestId);
   const errorResponse = {
     jsonrpc: "2.0",
     error: {
@@ -127,8 +128,10 @@ function processBufferedInput() {
 }
 
 function processJsonRpcRequest(jsonStr, jsonObj) {
+  const rpcId = jsonObj.id;
+
   if (process.env.BEARER_TOKEN && (process.env.USERNAME || process.env.PASSWORD)) {
-    logRpcError("Both BEARER_TOKEN and USERNAME/PASSWORD are provided. Use only one authentication method.", -32602);
+    logRpcError("Both BEARER_TOKEN and USERNAME/PASSWORD are provided. Use only one authentication method.", -32602, undefined, rpcId);
     process.exit(1);
   }
 
@@ -143,6 +146,8 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
     headers['Authorization'] = `Basic ${basicAuth}`;
   }
 
+  logMessage(`Processing request with ID: ${rpcId}`, null);
+
   const url = new URL(process.env.MCP_SERVER);
 
   const options = {
@@ -155,6 +160,7 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
 
   const req = https.request(options, (res) => {
     let responseData = '';
+    const requestId = res.headers['x-request-id'];
 
     res.on('data', (chunk) => {
       responseData += chunk;
@@ -162,19 +168,37 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
 
     res.on('end', () => {
       try {
+        if (!responseData.trim()) {
+          logMessage(`Received empty response for RPC ID ${rpcId}`, requestId);
+          if (rpcId !== undefined && rpcId !== null) {
+            logRpcError("Empty response from server", -32603, "Server returned empty content", rpcId, requestId);
+          }
+          return;
+        }
+
         const jsonResponse = JSON.parse(responseData);
-        logMessage(`Response JSON: ${JSON.stringify(jsonResponse)}`);
+
+        if (rpcId === undefined || rpcId === null) {
+          logMessage(`Processed notification request successfully (no response needed)`, requestId);
+          return;
+        }
+
+        logMessage(`Response for RPC ID ${rpcId}: ${JSON.stringify(jsonResponse)}`, requestId);
         console.log(JSON.stringify(jsonResponse));
       } catch (e) {
-        logRpcError("Invalid JSON response from server", -32603, undefined, jsonObj.id);
+        if (rpcId !== undefined && rpcId !== null) {
+          logRpcError("Invalid JSON response from server", -32603, responseData, rpcId, requestId);
+        } else {
+          logMessage(`Error processing notification response: ${e.message}`, requestId);
+        }
       }
     });
   });
 
   req.on('error', (error) => {
-    logMessage("Request failed");
-    logMessage(error.message);
-    logRpcError("Request failed", -32603, error.message, jsonObj.id);
+    logMessage(`Request failed for RPC ID ${rpcId}`, null);
+    logMessage(error.message, null);
+    logRpcError("Request failed", -32603, error.message, rpcId);
   });
 
   req.write(jsonStr);
