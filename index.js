@@ -20,32 +20,115 @@ try {
 function logMessage(message) {
   if (fs.existsSync(LOG_FILE)) {
     const serverPrefix = process.env.MCP_SERVER ? `[${process.env.MCP_SERVER}] ` : '';
-    fs.appendFileSync(LOG_FILE, `${serverPrefix}${message}\n`);
+    fs.appendFileSync(LOG_FILE, `${serverPrefix}${message}\n\n`, 'utf8');
   }
 }
 
+function logRpcError(message, code = -32603, data = undefined, id = null) {
+  logMessage(`Error: ${message}`);
+
+  const errorResponse = {
+    jsonrpc: "2.0",
+    error: {
+      code: code,
+      message: message
+    },
+    id: id
+  };
+
+  if (data !== undefined) {
+    errorResponse.error.data = data;
+  }
+
+  console.log(JSON.stringify(errorResponse));
+}
+
 if (!process.env.MCP_SERVER) {
-  logMessage("Error: MCP_SERVER environment variable is not set.");
+  logRpcError("MCP_SERVER environment variable is not set", -32602);
   process.exit(1);
 }
 
 logMessage("Bridge started");
 
+let buffer = '';
+
 process.stdin.on('data', (data) => {
   logMessage("Received data from stdin");
-  const line = data.toString().trim();
-  logMessage(`Input JSON: ${line}`);
+  buffer += data.toString();
 
-  try {
-    JSON.parse(line);
-  } catch (e) {
-    logMessage(`Invalid JSON input: ${line}`);
-    console.log(JSON.stringify({ error: "Invalid JSON input" }));
-    return;
+  processBufferedInput();
+});
+
+function processBufferedInput() {
+  let startPos = 0;
+
+  while (startPos < buffer.length) {
+    try {
+      const jsonStart = buffer.indexOf('{', startPos);
+      if (jsonStart === -1) {
+        buffer = buffer.substring(startPos);
+        return;
+      }
+
+      let jsonEnd = -1;
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+
+      for (let i = jsonStart; i < buffer.length; i++) {
+        const char = buffer[i];
+
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            inString = false;
+          }
+        } else if (char === '"') {
+          inString = true;
+        } else if (char === '{') {
+          depth++;
+        } else if (char === '}') {
+          depth--;
+          if (depth === 0) {
+            jsonEnd = i;
+            break;
+          }
+        }
+      }
+
+      if (jsonEnd === -1) {
+        buffer = buffer.substring(startPos);
+        return;
+      }
+
+      const jsonStr = buffer.substring(jsonStart, jsonEnd + 1);
+      logMessage(`Processing JSON: ${jsonStr}`);
+
+      try {
+        const jsonObj = JSON.parse(jsonStr);
+        processJsonRpcRequest(jsonStr, jsonObj);
+      } catch (e) {
+        logMessage(`Invalid JSON: ${jsonStr}`);
+        logMessage(`Parse error details: ${e.message}`);
+      }
+
+      startPos = jsonEnd + 1;
+    } catch (e) {
+      logMessage(`Error in JSON processing: ${e.message}`);
+      buffer = buffer.substring(startPos);
+      return;
+    }
   }
 
+  buffer = '';
+}
+
+function processJsonRpcRequest(jsonStr, jsonObj) {
   if (process.env.BEARER_TOKEN && (process.env.USERNAME || process.env.PASSWORD)) {
-    logMessage("Error: Both BEARER_TOKEN and USERNAME/MCP_PASSWORD are provided. Use only one authentication method.");
+    logRpcError("Both BEARER_TOKEN and USERNAME/PASSWORD are provided. Use only one authentication method.", -32602);
     process.exit(1);
   }
 
@@ -79,25 +162,24 @@ process.stdin.on('data', (data) => {
 
     res.on('end', () => {
       try {
-        const jsonResponse = JSON.stringify(JSON.parse(responseData));
-        logMessage(`Response JSON: ${jsonResponse}`);
-        console.log(jsonResponse);
+        const jsonResponse = JSON.parse(responseData);
+        logMessage(`Response JSON: ${JSON.stringify(jsonResponse)}`);
+        console.log(JSON.stringify(jsonResponse));
       } catch (e) {
-        logMessage("Invalid JSON response from server");
-        console.log(JSON.stringify({ error: "Invalid JSON response from server" }));
+        logRpcError("Invalid JSON response from server", -32603, undefined, jsonObj.id);
       }
     });
   });
 
   req.on('error', (error) => {
-    logMessage("curl failed");
+    logMessage("Request failed");
     logMessage(error.message);
-    console.log(JSON.stringify({ error: "Request failed" }));
+    logRpcError("Request failed", -32603, error.message, jsonObj.id);
   });
 
-  req.write(line);
+  req.write(jsonStr);
   req.end();
-});
+}
 
 process.stdin.on('end', () => {
   logMessage("Bridge shutting down");
