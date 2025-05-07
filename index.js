@@ -153,7 +153,7 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
   const options = {
     hostname: url.hostname,
     port: url.port || 443,
-    path: url.pathname,
+    path: url.pathname + url.search,
     method: 'POST',
     headers,
   };
