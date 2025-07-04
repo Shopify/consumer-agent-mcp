@@ -4,11 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-/**
- * Extract custom headers from command line arguments
- * @param {string[]} args - Array of command line arguments
- * @returns {object} Object containing headers
- */
 function extractHeaders(args) {
   const headers = {};
 

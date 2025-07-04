@@ -43,7 +43,7 @@ Copy and customize the JSON configuration below to match your setup. Replace pla
         "MCP_SERVER": "https://bearer-auth.mcp-server.ai",
         "BEARER_TOKEN": "your_auth_token"
       }
-    },
+    }
   }
 }
 ```
