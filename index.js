@@ -4,6 +4,27 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+function extractHeaders(args) {
+  const headers = {};
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--header' && i + 1 < args.length) {
+      const headerValue = args[i + 1];
+      const colonIndex = headerValue.indexOf(':');
+      if (colonIndex > 0) {
+        const headerName = headerValue.substring(0, colonIndex).trim();
+        const headerVal = headerValue.substring(colonIndex + 1).trim();
+        headers[headerName] = headerVal;
+      }
+      i++;
+    }
+  }
+
+  return headers;
+}
+
+const customHeaders = extractHeaders(process.argv.slice(2));
+
 const DEFAULT_LOG_DIR = path.join(process.env.HOME || process.env.USERPROFILE, 'bridge_logs');
 const LOG_FILE = path.join(DEFAULT_LOG_DIR, 'bridge.log');
 
@@ -145,6 +166,10 @@ function processJsonRpcRequest(jsonStr, jsonObj) {
     const basicAuth = Buffer.from(`${process.env.USERNAME}:${process.env.PASSWORD}`).toString('base64');
     headers['Authorization'] = `Basic ${basicAuth}`;
   }
+
+  Object.keys(customHeaders).forEach(headerName => {
+    headers[headerName] = customHeaders[headerName];
+  });
 
   logMessage(`Processing request with ID: ${rpcId}`, null);
 
