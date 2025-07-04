@@ -14,6 +14,7 @@ To set up the MCP servers locally, use the following configuration file. Below, 
 
 3. **Bearer Token Authentication**: Supply your authentication token in the `BEARER_TOKEN` field of the `bearer-auth` configuration.
 
+4. **Custom Headers**: Add any custom headers by using the `--header` command line argument in the format `--header "Name: Value"`. Multiple headers can be specified by repeating the `--header` argument.
 Copy and customize the JSON configuration below to match your setup. Replace placeholder values like `your_username`, `your_password`, and `your_auth_token` with your actual credentials.
 
 ```json
@@ -42,7 +43,7 @@ Copy and customize the JSON configuration below to match your setup. Replace pla
         "MCP_SERVER": "https://bearer-auth.mcp-server.ai",
         "BEARER_TOKEN": "your_auth_token"
       }
-    }
+    },
   }
 }
 ```
